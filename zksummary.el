@@ -62,6 +62,16 @@
         (zksummary-capture type time)
       (user-error "[%] is an invalid time format of type [%s]" time type))))
 
+(defun zksummary-ewoc-pp (data)
+  (when data
+    (let ((id (nth 0 data))
+          (summary-time (nth 1 data))
+          (type (nth 2 data))
+          (content (nth 3 data)))
+      (insert (propertize summary-time 'face 'zksummary-time-face))
+      (insert "\n")
+      (insert (propertize content 'id id)))))
+
 ;;;###autoload
 (defun zksummary-show ()
   "Show a type of zksummary notes, defaultly to `zksummary-default-type'."
@@ -72,7 +82,7 @@
             (ewoc (ewoc-create 'zksummary-ewoc-pp))
             (summaries (zksummary-db-type-notes zksummary-default-type)))
         (dolist (summary summaries)
-          (ewoc-enter-last)))
+          (ewoc-enter-last ewoc)))
       (read-only-mode 1)
       (switch-to-buffer buf))))
 
