@@ -105,6 +105,9 @@ SQL can be either the emacsql vector representation, or a string."
    `[:insert-into summary :values [,(org-id-uuid) ,type ,content ,time
                                    ,(time-convert (current-time) 'integer)]]))
 
+(defun zksummary-db-delete (id)
+  (zksummary-db-query `[:delete :from summary :where (= id ,id)]))
+
 (defun zksummary-db-type-notes (type)
   (zksummary-db-query `[:select [id summary_time type content] :from summary
                                 :where (= type ,type) :order-by (desc summary_time)]))
