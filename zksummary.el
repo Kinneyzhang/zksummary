@@ -70,8 +70,14 @@
   (buffer-disable-undo))
 
 (defun zksummary-ewoc-pp (data)
-  (if data
-      ))
+  (when data
+    (let ((id (nth 0 data))
+          (summary-time (nth 1 data))
+          (type (nth 2 data))
+          (content (nth 3 data)))
+      (insert (propertize summary-time 'face 'zksummary-time-face))
+      (insert "\n")
+      (insert (propertize content 'id id)))))
 
 ;;;###autoload
 (defun zksummary-show ()
