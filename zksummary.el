@@ -62,6 +62,17 @@
         (zksummary-capture type time)
       (user-error "[%] is an invalid time format of type [%s]" time type))))
 
+(defvar zksummary-ewoc nil)
+
+(defun zksummay-buffer-setup ()
+  (kill-all-local-variables)
+  (remove-overlays)
+  (buffer-disable-undo))
+
+(defun zksummary-ewoc-pp (data)
+  (if data
+      ))
+
 ;;;###autoload
 (defun zksummary-show ()
   "Show a type of zksummary notes, defaultly to `zksummary-default-type'."
@@ -69,10 +80,11 @@
   (let ((buf (get-buffer-create zksummary-buffer)))
     (with-current-buffer buf
       (let ((inhibit-read-only 1)
-            (ewoc (ewoc-create 'zksummary-ewoc-pp))
+            (ewoc (ewoc-create 'zksummary-ewoc-pp nil nil t))
             (summaries (zksummary-db-type-notes zksummary-default-type)))
+        (setq-local zksummary-ewoc ewoc)
         (dolist (summary summaries)
-          (ewoc-enter-last)))
+          (ewoc-enter-last ewoc )))
       (read-only-mode 1)
       (switch-to-buffer buf))))
 
