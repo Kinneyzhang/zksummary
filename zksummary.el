@@ -27,8 +27,6 @@
 (defvar-local zksummary-capture-type nil)
 (defvar-local zksummary-capture-time nil)
 
-(defvar zksummary-default-type "daily")
-
 (defun zksummary-default-time-by-type (type)
   (pcase type
     ("daily" (format-time-string "%Y-%m-%d" (current-time)))
