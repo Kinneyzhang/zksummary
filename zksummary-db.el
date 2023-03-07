@@ -109,27 +109,4 @@ SQL can be either the emacsql vector representation, or a string."
   (zksummary-db-query `[:select [id summary_time type content] :from summary
                                 :where (= type ,type) :order-by (desc summary_time)]))
 
-;;; Test
-
-(progn
-  (zksummary-db-clear)
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-02-04" "2023-02-04")
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-02-03" "2023-02-03")
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-02-02" "2023-02-02")
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-02-01" "2023-02-01")
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-02-10" "2023-02-10")
-  (zksummary-db-add "daily" "this is a test note of zksummary, type is daily and time is 2023-01-14" "2023-01-14")
-  (zksummary-db-add "monthly" "2023-01 monthly summary" "2023-01")
-  (zksummary-db-add "monthly" "2023-03 monthly summary" "2023-03")
-  (zksummary-db-add "monthly" "2022-12 monthly summary" "2022-12")
-  (zksummary-db-add "yearly" "2022 summary" "2022")
-  (zksummary-db-add "yearly" "2021 summary" "2021")
-  (zksummary-db-add "yearly" "2023 summary" "2023"))
-
-(zksummary-db-type-notes "yearly")
-(zksummary-db-type-notes "monthly")
-(zksummary-db-type-notes "daily")
-(zksummary-db-type-notes "weekly")
-
-;;; Test
 (provide 'zksummary-db)

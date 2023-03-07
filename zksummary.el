@@ -1,4 +1,5 @@
 (require 'zksummary-db)
+(require 'zksummary-face)
 
 (defvar zksummary-buffer "*zksummary*")
 (defvar zksummary-default-type "weekly")
