@@ -100,13 +100,17 @@ SQL can be either the emacsql vector representation, or a string."
   (zksummary-db--close)
   (delete-file zksummary-db-file))
 
-(defun zksummary-db-add (type content time)
-  (zksummary-db-query
-   `[:insert-into summary :values [,(org-id-uuid) ,type ,content ,time
-                                   ,(time-convert (current-time) 'integer)]]))
-
 (defun zksummary-db-delete (id)
   (zksummary-db-query `[:delete :from summary :where (= id ,id)]))
+
+(defun zksummary-db-add (type content time &optional id)
+  (zksummary-db-query
+   `[:insert-into summary :values [,(or id (org-id-uuid)) ,type ,content ,time
+                                   ,(time-convert (current-time) 'integer)]]))
+
+(defun zksummary-db-update (id content)
+  (zksummary-db-query `[:update summary :set (= content ,content)
+                                :where (= id ,id)]))
 
 (defun zksummary-db-type-notes (type)
   (zksummary-db-query `[:select [id summary_time type content] :from summary

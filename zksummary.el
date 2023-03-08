@@ -1,3 +1,4 @@
+(require 'zksummary-util)
 (require 'zksummary-db)
 (require 'zksummary-face)
 
@@ -26,6 +27,8 @@
 (defvar zksummary-window-configuration nil)
 (defvar-local zksummary-capture-type nil)
 (defvar-local zksummary-capture-time nil)
+(defvar-local zksummary-capture-content nil)
+(defvar-local zksummary-capture-id nil)
 
 (defun zksummary-default-time-by-type (type)
   (pcase type
@@ -33,20 +36,29 @@
     ("monthly" (format-time-string "%Y-%m" (current-time)))
     ("yearly" (format-time-string "%Y" (current-time)))))
 
-(defun zksummary-capture (&optional type)
+(defun zksummary-capture (&optional type time content id)
   (setq zksummary-window-configuration (current-window-configuration))
   (pop-to-buffer zksummary-capture-buffer)
   (setq zksummary-capture-type (or type zksummary-default-type))
-  (setq zksummary-capture-time (zksummary-default-time-by-type
-                                     zksummary-capture-type))
-  (insert (format "%s summary: %s\n\n" zksummary-capture-type zksummary-capture-time))
+  (setq zksummary-capture-time (or time (zksummary-default-time-by-type
+                                         zksummary-capture-type)))
+  (setq zksummary-capture-content content)
+  (setq zksummary-capture-id id)
+  (insert (format "%s summary: %s\n\n"
+                  zksummary-capture-type zksummary-capture-time))
+  (when content (insert content))
+  (when zksummary-capture-id
+    ;; make the meta info read only.
+    (save-excursion
+      (goto-char (point-min))
+      (add-text-properties (line-beginning-position) (+ 2 (line-end-position)) '(read-only t))))
   (zksummary-capture-mode 1))
 
 (defun zksummary-capture-finalize ()
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (let (type time content)
+    (let (type time content old-content old-id)
       (if (re-search-forward "^\\(.+\\) +summary: +\\([-0-9]+\\)"
                              (line-end-position) t)
           (progn
@@ -55,9 +67,19 @@
         (user-error "Invalid format of summary meta!"))
       (forward-line 2)
       (setq content (buffer-substring-no-properties (point) (point-max)))
-      (zksummary-db-add type content time)))
-  (set-window-configuration zksummary-window-configuration)
-  (kill-buffer zksummary-capture-buffer))
+      (setq old-content zksummary-capture-content)
+      (setq old-id zksummary-capture-id)
+      (set-window-configuration zksummary-window-configuration)
+      (kill-buffer zksummary-capture-buffer)
+      (if old-id
+          ;; edit a summary
+          (unless (string= content old-content)
+            (zksummary-ewoc-update old-id time type content)
+            (zksummary-db-update old-id content))
+        ;; add a new summary
+        (let ((id (org-id-uuid)))
+          (zksummary-ewoc-add id time type content)
+          (zksummary-db-add type content time id))))))
 
 (defun zksummary-capture-kill ()
   (interactive)
@@ -140,13 +162,19 @@
 ;;;###autoload
 (defun zksummary-delete ()
   (interactive)
-  (let ((id (get-text-property (point) 'id)))
-    (zksummary-db-delete id)))
+  (let ((id (zksummary-ewoc-id)))
+    (when (y-or-n-p "Delete current summary?")
+      (zksummary-ewoc-delete)
+      (zksummary-db-delete id))))
 
 ;;;###autoload
 (defun zksummary-edit ()
   (interactive)
-  )
+  (let ((type (zksummary-ewoc-data :type))
+        (id (zksummary-ewoc-data :id))
+        (time (zksummary-ewoc-data :time))
+        (content (zksummary-ewoc-data :content)))
+    (zksummary-capture type time content id)))
 
 ;;;###autoload
 (defun zksummary-refresh ()
@@ -158,6 +186,10 @@
     (define-key map "a" #'zksummary-add)
     (define-key map "D" #'zksummary-delete)
     (define-key map "g" #'zksummary-refresh)
+    (define-key map "e" #'zksummary-edit)
+    (define-key map "td" #'zksummary-daily-show)
+    (define-key map "tm" #'zksummary-monthly-show)
+    (define-key map "ty" #'zksummary-yearly-show)
     map))
 
 (provide 'zksummary)
