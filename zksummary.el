@@ -181,11 +181,17 @@
   (interactive)
   (zksummary-show zksummary-current-type))
 
+;;;###autoload
+(defun zksummary-quit ()
+  (interactive)
+  (quit-window))
+
 (defvar zksummary-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "a" #'zksummary-add)
     (define-key map "D" #'zksummary-delete)
     (define-key map "g" #'zksummary-refresh)
+    (define-key map "q" #'zksummary-quit)
     (define-key map "e" #'zksummary-edit)
     (define-key map "td" #'zksummary-daily-show)
     (define-key map "tm" #'zksummary-monthly-show)
