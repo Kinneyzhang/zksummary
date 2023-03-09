@@ -36,7 +36,7 @@
 (require 'emacsql-sqlite)
 
 (defvar zksummary-db-file
-  (expand-file-name "zksummary.db" (concat user-emacs-directory "zksummary")))
+  (expand-file-name "zksummary.db" (concat user-emacs-directory "ego-db")))
 
 (defvar zksummary-db--conn (make-hash-table :test #'equal)
   "Database connection to zksummary-db.")
