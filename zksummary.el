@@ -162,7 +162,7 @@
 ;;;###autoload
 (defun zksummary-delete ()
   (interactive)
-  (let ((id (zksummary-ewoc-id)))
+  (let ((id (zksummary-ewoc-data :id)))
     (when (y-or-n-p "Delete current summary?")
       (zksummary-ewoc-delete)
       (zksummary-db-delete id))))
