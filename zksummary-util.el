@@ -1,3 +1,57 @@
+(defun zksummary-date-to-seconds (&optional date)
+  "Convert date to seconds."
+  (let ((date (or date (zksummary-seconds-to-date))))
+    (time-convert (date-to-time (concat date " 00:00:00")) 'integer)))
+
+(defun zksummary-seconds-to-date (&optional seconds)
+  "Convert seconds to a date."
+  (format-time-string "%Y-%m-%d" seconds))
+
+(defun zksummary-inc-date (date n)
+  (let* ((second (zksummary-date-to-seconds date))
+         (new-second (+ second (* n (* 24 60 60)))))
+    (zksummary-seconds-to-date new-second)))
+
+(defun zksummary-inc-db-date (date n)
+  "Increate N days of DATE on which must have a record in db."
+  (let ((max-date (zksummary-db-max-time "daily"))
+        (min-date (zksummary-db-min-time "daily")))
+    (pcase date
+      ((and (pred (string= max-date))
+            (guard (> n 0)))
+       (message "The latest daily summary!"))
+      ((and (pred (string= min-date))
+            (guard (< n 0)))
+       (message "The earlist daily summary!"))
+      (_ (and (setq date (zksummary-inc-date date n))
+              (while (= (zksummary-db-count-by-time date) 0)
+                (setq date (zksummary-inc-date date n))))))
+    date))
+
+(defun zksummary-calendar-date (&optional seconds)
+  (list (string-to-number (format-time-string "%m" seconds))
+        (string-to-number (format-time-string "%d" seconds))
+        (string-to-number (format-time-string "%Y" seconds))))
+
+(defun zksummary--weekdays-list (first-day-second)
+  (let ((seccond-lst))
+    (dotimes (i 7)
+      (setq seccond-lst
+            (append seccond-lst (list (+ first-day-second
+                                         (* i (* 24 60 60)))))))
+    (mapcar #'zksummary-seconds-to-date seccond-lst)))
+
+(defun zksummary-curr-week (&optional date)
+  "A list of all date in a week. DATE is a day of the week."
+  (let* ((day-seconds (zksummary-date-to-seconds date))
+         (calendar-date (zksummary-calendar-date day-seconds))
+         (nth (calendar-day-of-week calendar-date))
+         (minused-days (let ((days (1- nth)))
+                         (if (< days 0) (+ days 7) days)))
+         (minused-seconds (* minused-days (* 24 60 60)))
+         (first-weekday-seconds (- day-seconds minused-seconds)))
+    (zksummary--weekdays-list first-weekday-seconds)))
+
 (defun zksummary-floor-time (time)
   (let* ((timelst (zksummary-ewoc-buffer-data :time))
          (sorted-timelst (sort timelst #'string>)))

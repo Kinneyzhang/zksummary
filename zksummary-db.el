@@ -116,4 +116,24 @@ SQL can be either the emacsql vector representation, or a string."
   (zksummary-db-query `[:select [id summary_time type content] :from summary
                                 :where (= type ,type) :order-by (desc summary_time)]))
 
-(provide 'zksummary-db)
+(defun zksummary-db-type-time-notes (type timelst)
+  (zksummary-db-query
+   `[:select [id summary_time type content] :from summary
+             :where (and (= type ,type)
+                         (in summary_time ,timelst))
+             :order-by (desc summary_time)]))
+
+(defun zksummary-db-count-by-time (time)
+  (caar (zksummary-db-query `[:select (funcall count *) :from summary
+                                      :where (= summary_time ,time)])))
+
+(defun zksummary-db-max-time (type)
+  (caar (zksummary-db-query
+         `[:select (funcall max summary_time) :from summary
+                   :where (= type ,type)])))
+
+(defun zksummary-db-min-time (type)
+  (caar (zksummary-db-query
+         `[:select (funcall min summary_time) :from summary
+                   :where (= type ,type)])))
+

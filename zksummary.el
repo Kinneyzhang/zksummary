@@ -101,6 +101,7 @@
 
 (defvar zksummary-ewoc nil)
 (defvar zksummary-current-type nil)
+(defvar zksummary-current-time-range nil)
 
 (defun zksummay-buffer-setup ()
   (erase-buffer)
@@ -122,27 +123,69 @@
       (insert (propertize content 'id id) "\n\n"))))
 
 ;;;###autoload
-(defun zksummary-show (&optional type)
-  "Show a type of zksummary notes, defaultly to `zksummary-default-type'."
+(defun zksummary-show (&optional type timelst)
+  "Show a type of zksummary notes, defaultly to `zksummary-default-type'. TIMELST is a range of time."
   (interactive)
   (let ((buf (get-buffer-create zksummary-buffer))
         (inhibit-read-only 1))
     (with-current-buffer buf
       (zksummay-buffer-setup)
+      (setq-local zksummary-current-type type)
+      ;; date/month/year list
+      (setq-local zksummary-current-time-range timelst)
       (let* ((ewoc (ewoc-create 'zksummary-ewoc-pp nil nil t))
              (type (or type zksummary-default-type))
-             (summaries (zksummary-db-type-notes type)))
+             (summaries (if timelst
+                            (zksummary-db-type-time-notes type (vconcat timelst))
+                          (zksummary-db-type-notes type))))
         (setq-local zksummary-ewoc ewoc)
-        (setq-local zksummary-current-type type)
         (dolist (summary summaries)
           (ewoc-enter-last ewoc summary)))
       (read-only-mode 1)
       (switch-to-buffer buf))))
 
+;;;; daily view
+
 ;;;###autoload
 (defun zksummary-daily-show ()
   (interactive)
   (zksummary-show "daily"))
+
+(defun zksummary-daily-show-curr-day ()
+  (interactive)
+  (zksummary-show "daily" (list (zksummary-seconds-to-date))))
+
+(defun zksummary-daily-show-prev-day ()
+  (interactive)
+  (zksummary-show
+   "daily"
+   (list (zksummary-inc-db-date
+          (nth 0 zksummary-current-time-range) -1))))
+
+(defun zksummary-daily-show-next-day ()
+  (interactive)
+  (zksummary-show
+   "daily"
+   (list (zksummary-inc-db-date
+          (nth 0 zksummary-current-time-range) 1))))
+
+(defun zksummary-daily-show-curr-week ()
+  (interactive)
+  (zksummary-show "daily" (zksummary-curr-week)))
+
+(defun zksummary-daily-show-prev-week ()
+  (interactive)
+  (zksummary-show
+   "daily" (zksummary-curr-week
+            (zksummary-inc-date
+             (nth 0 zksummary-current-time-range) -7))))
+
+(defun zksummary-daily-show-next-week ()
+  (interactive)
+  (zksummary-show
+   "daily" (zksummary-curr-week
+            (zksummary-inc-date
+             (nth 0 zksummary-current-time-range) 7))))
 
 ;;;###autoload
 (defun zksummary-monthly-show ()
@@ -188,6 +231,14 @@
 
 (defvar zksummary-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map "d" #'zksummary-daily-show-curr-day)
+    (define-key map "b" #'zksummary-daily-show-prev-day)
+    (define-key map "f" #'zksummary-daily-show-next-day)
+    
+    (define-key map "w" #'zksummary-daily-show-curr-week)
+    (define-key map "B" #'zksummary-daily-show-prev-week)
+    (define-key map "F" #'zksummary-daily-show-next-week)
+    
     (define-key map "a" #'zksummary-add)
     (define-key map "D" #'zksummary-delete)
     (define-key map "g" #'zksummary-refresh)
