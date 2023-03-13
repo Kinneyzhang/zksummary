@@ -137,3 +137,4 @@ SQL can be either the emacsql vector representation, or a string."
          `[:select (funcall min summary_time) :from summary
                    :where (= type ,type)])))
 
+(provide 'zksummary-db)
