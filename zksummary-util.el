@@ -1,3 +1,12 @@
+(defun zksummary-is-date (time)
+  (string-match "^[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}$" time))
+
+(defun zksummary-is-month (time)
+  (string-match "^[0-9]\\{4\\}-[0-9]\\{2\\}$" time))
+
+(defun zksummary-is-year (time)
+  (string-match "^[0-9]\\{4\\}$" time))
+
 (defun zksummary-date-to-seconds (&optional date)
   "Convert date to seconds."
   (let ((date (or date (zksummary-seconds-to-date))))

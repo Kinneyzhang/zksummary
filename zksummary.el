@@ -114,11 +114,20 @@
 
 (defun zksummary-ewoc-pp (data)
   (when data
-    (let ((id (nth 0 data))
-          (summary-time (nth 1 data))
-          (type (nth 2 data))
-          (content (nth 3 data)))
-      (insert (propertize summary-time 'face 'zksummary-time-face))
+    (let* ((id (nth 0 data))
+           (summary-time (nth 1 data))
+           (weekday
+            (when (zksummary-is-date summary-time)
+              (format-time-string
+               "%a"
+               (zksummary-date-to-seconds summary-time))))
+           (type (nth 2 data))
+           (content (nth 3 data)))
+      (if weekday
+          (insert (propertize (concat summary-time " " weekday)
+                              'face 'zksummary-time-face))
+        (insert (propertize summary-time
+                            'face 'zksummary-time-face)))
       (insert "\n")
       (insert (propertize content 'id id) "\n\n"))))
 
