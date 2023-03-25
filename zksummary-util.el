@@ -21,6 +21,40 @@
          (new-second (+ second (* n (* 24 60 60)))))
     (zksummary-seconds-to-date new-second)))
 
+(defun zksummary-fmt-month-str (n)
+  (if (< n 10)
+      (format "0%s" n)
+    (number-to-string n)))
+
+(defun zksummary-inc-month (month n)
+  (let* ((y (substring month 0 4))
+         (m (string-to-number (substring month 5 7)))
+         (s (+ m n)))
+    (pcase n
+      ((pred (= 0)) month)
+      ((pred (< 0))
+       (if (<= s 12)
+           (concat y "-" (zksummary-fmt-month-str s))
+         (let* ((y-inc (/ s 12))
+                (new-m (% s 12))
+                (new-y (+ (string-to-number y) y-inc)))
+           (concat (number-to-string new-y) "-" (zksummary-fmt-month-str new-m)))))
+      ((pred (> 0))
+       (if (> s 0)
+           (concat y "-" (zksummary-fmt-month-str s))
+         (let* ((y-inc (1- (/ s 12)))
+                (new-y (+ (string-to-number y) y-inc))
+                (new-m (+ 12 (% s 12))))
+           (concat (number-to-string new-y) "-" (zksummary-fmt-month-str new-m))))))))
+
+(defun zksummary-inc-year (year n)
+  (number-to-string (+ (string-to-number year) n)))
+
+(defun zksummary-inc-date (date n)
+  (let* ((second (zksummary-date-to-seconds date))
+         (new-second (+ second (* n (* 24 60 60)))))
+    (zksummary-seconds-to-date new-second)))
+
 (defun zksummary-inc-db-date (date n)
   "Increate N days of DATE on which must have a record in db."
   (let ((max-date (zksummary-db-max-time "daily"))
@@ -50,7 +84,7 @@
                                          (* i (* 24 60 60)))))))
     (mapcar #'zksummary-seconds-to-date seccond-lst)))
 
-(defun zksummary-curr-week (&optional date)
+(defun zksummary-week-date-lst (&optional date)
   "A list of all date in a week. DATE is a day of the week."
   (let* ((day-seconds (zksummary-date-to-seconds date))
          (calendar-date (zksummary-calendar-date day-seconds))
@@ -61,12 +95,57 @@
          (first-weekday-seconds (- day-seconds minused-seconds)))
     (zksummary--weekdays-list first-weekday-seconds)))
 
+(defun zksummary-month-date-lst (&optional month)
+  "A list of all date in a month. DATE is a day of the month."
+  (let* ((month-str (or month (substring (zksummary-seconds-to-date) 0 7)))
+         (year (string-to-number (substring month-str 0 4)))
+         (month (string-to-number (substring month-str 5 7)))
+         (days (date-days-in-month year month)))
+    (mapcar (lambda (num)
+              (concat month-str "-" (zksummary-fmt-month-str num)))
+            (number-sequence 1 days 1))))
+
 (defun zksummary-floor-time (time)
   (let* ((timelst (zksummary-ewoc-buffer-data :time))
          (sorted-timelst (sort timelst #'string>)))
     (seq-find (lambda (el)
                 (string< el time))
               sorted-timelst)))
+
+(defun zksummary-time-range-to-list (timelst)
+  (let ((from (aref timelst 0))
+        (to (aref timelst 1)))
+    (pcase from
+      ((pred zksummary-is-date) (zksummary-date-seq from to))
+      ((pred zksummary-is-month) (zksummary-month-seq from to))
+      ((pred zksummary-is-date) (zksummary-year-seq from to))
+      (_ (error "Wrong format of zksummary time: %s" from)))))
+
+(defun zksummary-date-seq (from to)
+  (if (> (zksummary-date-to-seconds from)
+         (zksummary-date-to-seconds to))
+      (error "FROM date should not later than TO date!")
+    (let ((lst))
+      (while (<= (zksummary-date-to-seconds from)
+                 (zksummary-date-to-seconds to))
+        (setq lst (append lst (list from)))
+        (setq from (zksummary-inc-date from 1)))
+      lst)))
+
+(defun zksummary-month-seq (from to)
+  (if (string> from to)
+      (error "FROM month should not later than TO month!")
+    (let ((lst))
+      (while (not (string> from to))
+        (setq lst (append lst (list from)))
+        (setq from (zksummary-inc-month from 1)))
+      lst)))
+
+(defun zksummary-year-seq (from to)
+  (if (string> from to)
+      (error "FROM year should not later than TO year!")
+    (mapcar #'number-to-string
+            (number-sequence (string-to-number from) (string-to-number to) 1))))
 
 (defun zksummary-ewoc-node (&rest kv)
   ;; Return the ewoc node matched by kv.

@@ -72,13 +72,17 @@
           (zksummary-db--init conn)))))
   (zksummary-db--get-conn))
 
-(defun zksummary-db--close (&optional db)
-  "Closes the database connection for database DB.
-If DB is nil, closes the database connection for current zksummary db."
-  (unless db
-    (setq db (zksummary-db--get-conn)))
-  (when (and db (emacsql-live-p db))
-    (emacsql-close db)))
+;; key: db fileanme
+;; value: conn (emacsql-sqlite zksummary-db-file)
+;; hashmap: zksummary-db--conn
+
+(defun zksummary-db--close (&optional conn)
+  "Closes the database connection for database CONN.
+If CONN is nil, closes the database connection for current zksummary db."
+  (let ((conn (or conn (zksummary-db--get-conn))))
+    (when (and conn (emacsql-live-p conn))
+      (emacsql-close conn)
+      (puthash zksummary-db-file nil zksummary-db--conn))))
 
 (defun zksummary-db-query (sql &rest args)
   "Return SQL query on zksummary database with ARGS.
