@@ -116,11 +116,11 @@ SQL can be either the emacsql vector representation, or a string."
   (zksummary-db-query `[:update summary :set (= content ,content)
                                 :where (= id ,id)]))
 
-(defun zksummary-db-type-notes (type)
+(defun zksummary-db-type-entries (type)
   (zksummary-db-query `[:select [id summary_time type content] :from summary
                                 :where (= type ,type) :order-by (desc summary_time)]))
 
-(defun zksummary-db-type-time-notes (type timelst)
+(defun zksummary-db-type-time-entries (type timelst)
   (zksummary-db-query
    `[:select [id summary_time type content] :from summary
              :where (and (= type ,type)

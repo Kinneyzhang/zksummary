@@ -32,13 +32,14 @@
 
 (defun zksummary-default-time-by-type (type)
   (pcase type
-    ("daily" (format-time-string "%Y-%m-%d" (current-time)))
-    ("monthly" (format-time-string "%Y-%m" (current-time)))
-    ("yearly" (format-time-string "%Y" (current-time)))))
+    ("daily" (zksummary-date-str))
+    ("weekly" (zksummary-week-str))
+    ("monthly" (zksummary-month-str))
+    ("yearly" (zksummary-year-str))))
 
 (defun zksummary-capture (&optional type time content id)
   (setq zksummary-window-configuration (current-window-configuration))
-  (pop-to-buffer zksummary-capture-buffer)
+  (switch-to-buffer zksummary-capture-buffer)
   (setq zksummary-capture-type (or type zksummary-default-type))
   (setq zksummary-capture-time (or time (zksummary-default-time-by-type
                                          zksummary-capture-type)))
@@ -100,8 +101,8 @@
 ;;       (user-error "[%] is an invalid time format of type [%s]" time type))))
 
 (defvar zksummary-ewoc nil)
-(defvar zksummary-current-type nil)
-(defvar zksummary-current-time-range nil)
+(defvar zksummary-entry-type nil)
+(defvar zksummary-curr-timeseq nil)
 
 (defun zksummay-buffer-setup ()
   (erase-buffer)
@@ -112,24 +113,33 @@
   (setq mode-name "zksummary")
   (use-local-map zksummary-mode-map))
 
+(defun zksummary-time-shown (summary-time)
+  (pcase summary-time
+    ((pred zksummary-is-date)
+     (concat summary-time " " (zksummary-day-of-week summary-time)))
+    ((pred zksummary-is-week)
+     (string-join (split-string summary-time " " t) " ~ "))
+    (_ summary-time)))
+
 (defun zksummary-ewoc-pp (data)
-  (when data
-    (let* ((id (nth 0 data))
-           (summary-time (nth 1 data))
-           (weekday
-            (when (zksummary-is-date summary-time)
-              (format-time-string
-               "%a"
-               (zksummary-date-to-seconds summary-time))))
-           (type (nth 2 data))
-           (content (nth 3 data)))
-      (if weekday
-          (insert (propertize (concat summary-time " " weekday)
-                              'face 'zksummary-time-face))
-        (insert (propertize summary-time
-                            'face 'zksummary-time-face)))
-      (insert "\n")
-      (insert (propertize content 'id id) "\n\n"))))
+  (if data
+      (let* ((id (nth 0 data))
+             (summary-time (nth 1 data))
+             (type (nth 2 data))
+             (content (nth 3 data)))
+        (insert (propertize (zksummary-time-shown summary-time)
+                            'face 'zksummary-time-face))
+        (insert "\n")
+        (insert (propertize content 'id id) "\n\n"))
+    (insert "No entries yet!")))
+
+(defun zksummary-view-title (type period)
+  (format "%s Summaries For A %s\n"
+          (upcase-initials type)
+          (upcase-initials period)))
+
+(defun zksummary-view-keystr ()
+  "[f]:view forward [b]:view backward [.]:view current")
 
 ;;;###autoload
 (defun zksummary-show (&optional type timelst)
@@ -141,21 +151,33 @@ If TIMELST is a vector, it represents a range of time."
         (inhibit-read-only 1))
     (with-current-buffer buf
       (zksummay-buffer-setup)
-      (setq-local zksummary-current-type type)
-      ;; date/month/year list
-      (setq-local zksummary-current-time-range timelst)
-      (let* ((ewoc (ewoc-create 'zksummary-ewoc-pp nil nil t))
-             (type (or type zksummary-default-type))
-             (timelst (pcase timelst
-                        ((pred consp) timelst)
-                        ((pred vectorp) (zksummary-time-range-to-list timelst))))
-             (summaries
-              (if timelst
-                  (zksummary-db-type-time-notes type (vconcat timelst))
-                (zksummary-db-type-notes type))))
-        (setq-local zksummary-ewoc ewoc)
-        (dolist (summary summaries)
-          (ewoc-enter-last ewoc summary)))
+      (let* ((type-lst (split-string type "-" t))
+             (entry-type (car type-lst))
+             (entry-period (cadr type-lst))
+             (title (propertize (zksummary-view-title entry-type entry-period)
+                                'face 'zksummary-title-face))
+             (keyhint (propertize (zksummary-view-keystr)
+                                  'face 'zksummary-keyhint-face))
+             (ewoc-header (concat "\n" title "\n")))
+        (setq-local header-line-format keyhint)
+        (setq-local zksummary-view-type type)
+        (setq-local zksummary-entry-type entry-type)
+        (setq-local zksummary-curr-timeseq timelst)
+        (let* ((ewoc (ewoc-create 'zksummary-ewoc-pp ewoc-header nil t))
+               (type (or zksummary-entry-type zksummary-default-type))
+               (timelst (pcase timelst
+                          ((pred consp) timelst)
+                          ((pred vectorp)
+                           (zksummary-time-range-to-list timelst))))
+               (summaries
+                (if timelst
+                    (zksummary-db-type-time-entries type (vconcat timelst))
+                  (zksummary-db-type-entries type))))
+          (setq-local zksummary-ewoc ewoc)
+          (if (null summaries)
+              (ewoc-enter-last ewoc nil)
+            (dolist (summary summaries)
+              (ewoc-enter-last ewoc summary)))))
       (read-only-mode 1)
       (switch-to-buffer buf))))
 
@@ -164,118 +186,145 @@ If TIMELST is a vector, it represents a range of time."
 ;;;###autoload
 (defun zksummary-daily-show ()
   (interactive)
-  (zksummary-show "daily")
-  (setq-local zksummary-view-type "daily-all"))
+  (zksummary-show "daily-all"))
 
 ;;;###autoload
-(defun zksummary-daily-show-curr-day ()
-  (interactive)
-  (zksummary-show "daily" (list (zksummary-seconds-to-date)))
-  (setq-local zksummary-view-type "daily-date"))
-
-;;;###autoload
-(defun zksummary-daily-show-prev-day ()
+(defun zksummary-daily-show-now-date ()
   (interactive)
   (zksummary-show
-   "daily"
-   (list (zksummary-inc-db-date
-          (nth 0 zksummary-current-time-range) -1)))
-  (setq-local zksummary-view-type "daily-date"))
+   "daily-date" (list (zksummary-seconds-to-date))))
 
 ;;;###autoload
-(defun zksummary-daily-show-next-day ()
+(defun zksummary-daily-show-curr-date ()
   (interactive)
   (zksummary-show
-   "daily"
+   "daily-date" (list (nth 0 zksummary-curr-timeseq))))
+
+;;;###autoload
+(defun zksummary-daily-show-prev-date ()
+  (interactive)
+  (zksummary-show
+   "daily-date"
    (list (zksummary-inc-db-date
-          (nth 0 zksummary-current-time-range) 1)))
-  (setq-local zksummary-view-type "daily-date"))
+          (nth 0 zksummary-curr-timeseq) -1))))
+
+;;;###autoload
+(defun zksummary-daily-show-next-date ()
+  (interactive)
+  (zksummary-show
+   "daily-date"
+   (list (zksummary-inc-db-date
+          (nth 0 zksummary-curr-timeseq) 1))))
+
+;;;###autoload
+(defun zksummary-daily-show-now-week ()
+  (interactive)
+  (zksummary-show "daily-week" (zksummary-week-date-lst)))
 
 ;;;###autoload
 (defun zksummary-daily-show-curr-week ()
   (interactive)
-  (zksummary-show "daily" (zksummary-week-date-lst))
-  (setq-local zksummary-view-type "daily-week"))
+  (zksummary-show "daily-week"
+                  (zksummary-week-date-lst
+                   (nth 0 zksummary-curr-timeseq))))
 
 ;;;###autoload
 (defun zksummary-daily-show-prev-week ()
   (interactive)
   (zksummary-show
-   "daily" (zksummary-week-date-lst
-            (zksummary-inc-date
-             (nth 0 zksummary-current-time-range) -7)))
-  (setq-local zksummary-view-type "daily-week"))
+   "daily-week" (zksummary-inc-db-week-date-lst
+                 zksummary-curr-timeseq -1)))
 
 ;;;###autoload
 (defun zksummary-daily-show-next-week ()
   (interactive)
   (zksummary-show
-   "daily" (zksummary-week-date-lst
-            (zksummary-inc-date
-             (nth 0 zksummary-current-time-range) 7)))
-  (setq-local zksummary-view-type "daily-week"))
+   "daily-week" (zksummary-inc-db-week-date-lst
+                 zksummary-curr-timeseq 1)))
+
+;; show even not exisit entry in db
+;; don't show if not exisit entry in db
+
+;;;###autoload
+(defun zksummary-daily-show-now-month ()
+  (interactive)
+  (zksummary-show "daily-month" (zksummary-month-date-lst)))
 
 ;;;###autoload
 (defun zksummary-daily-show-curr-month ()
   (interactive)
-  (zksummary-show "daily" (zksummary-month-date-lst))
-  (setq-local zksummary-view-type "daily-month"))
+  (zksummary-show "daily-month"
+                  (zksummary-month-date-lst
+                   (zksummary-month-str
+                    (nth 0 zksummary-curr-timeseq)))))
 
 ;;;###autoload
 (defun zksummary-daily-show-prev-month ()
   (interactive)
-  (zksummary-show "daily" (zksummary-month-date-lst
-                           (zksummary-inc-month
-                            (substring (nth 0 zksummary-current-time-range) 0 7) -1)))
-  (setq-local zksummary-view-type "daily-month"))
+  (zksummary-show
+   "daily-month"
+   (zksummary-month-date-lst
+    (zksummary-inc-month
+     (zksummary-month-str (nth 0 zksummary-curr-timeseq)) -1))))
 
 ;;;###autoload
 (defun zksummary-daily-show-next-month ()
   (interactive)
-  (zksummary-show "daily" (zksummary-month-date-lst
-                           (zksummary-inc-month
-                            (substring (nth 0 zksummary-current-time-range) 0 7) 1)))
-  (setq-local zksummary-view-type "daily-month"))
+  (zksummary-show
+   "daily-month"
+   (zksummary-month-date-lst
+    (zksummary-inc-month
+     (zksummary-month-str (nth 0 zksummary-curr-timeseq)) 1))))
 
 ;;;; weekly view
 ;;;###autoload
 (defun zksummary-weekly-show ()
   (interactive)
-  (zksummary-show "weekly")
-  (setq-local zksummary-view-type "weekly-all"))
+  (zksummary-show "weekly-all"))
 
-;; (defun zksummary-weekly-show-curr-week ()
-;;   (interactive)
-;;   (zksummary-show "weekly")
-;;   (setq-local zksummary-view-type "weekly-week"))
+(defun zksummary-weekly-show-now-week ()
+  (interactive)
+  (zksummary-show "weekly-week" (list (zksummary-week-str))))
 
-;; (defun zksummary-weekly-show-prev-week ()
-;;   (interactive)
-;;   (zksummary-show "weekly")
-;;   (setq-local zksummary-view-type "weekly-week"))
+(defun zksummary-weekly-show-curr-week ()
+  ;; 支持 当前日期所在的 weekly summary
+  (interactive)
+  (zksummary-show "weekly-week"
+                  (list (zksummary-week-str
+                         (nth 0 zksummary-curr-timeseq)))))
 
-;; (defun zksummary-weekly-show-next-week ()
-;;   (interactive)
-;;   (zksummary-show "weekly")
-;;   (setq-local zksummary-view-type "weekly-week"))
+(defun zksummary-weekly-show-prev-week ()
+  (interactive)
+  (zksummary-show "weekly-week"
+                  (list (zksummary-inc-week
+                         (nth 0 zksummary-curr-timeseq) -1))))
+
+(defun zksummary-weekly-show-next-week ()
+  (interactive)
+  (zksummary-show "weekly-week"
+                  (list (zksummary-inc-week
+                         (nth 0 zksummary-curr-timeseq) 1))))
 
 ;;; monthly view
 ;;;###autoload
 (defun zksummary-monthly-show ()
   (interactive)
-  (zksummary-show "monthly")
-  (setq-local zksummary-view-type "monthly-all"))
+  (zksummary-show "monthly-all"))
+
+;;;###autoload
+(defun zksummary-monthly-show-curr-month ()
+  (interactive)
+  (zksummary-show "monthly-month" ))
 
 ;;;###autoload
 (defun zksummary-yearly-show ()
   (interactive)
-  (zksummary-show "yearly")
-  (setq-local zksummary-view-type "yearly-all"))
+  (zksummary-show "yearly-all"))
 
 ;;;###autoload
 (defun zksummary-add ()
   (interactive)
-  (zksummary-capture zksummary-current-type))
+  (zksummary-capture zksummary-entry-type))
 
 ;;;###autoload
 (defun zksummary-delete ()
@@ -297,7 +346,7 @@ If TIMELST is a vector, it represents a range of time."
 ;;;###autoload
 (defun zksummary-refresh ()
   (interactive)
-  (zksummary-show zksummary-current-type))
+  (zksummary-show zksummary-view-type zksummary-curr-timeseq))
 
 ;;;###autoload
 (defun zksummary-quit ()
@@ -309,16 +358,77 @@ If TIMELST is a vector, it represents a range of time."
 (defvar zksummary-view-type nil
   "daily-date, daily-week, daily-month, daily-year, daily-all,
    weekly-week, weekly-all,
-   monthly-month, monthly-year, monthly-all")
+   monthly-month, monthly-year, monthly-all,
+   yearly-all.")
+
+(defun zksummary-view-show-now ()
+  (interactive)
+  (pcase zksummary-view-type
+    ("daily-date" (zksummary-daily-show-now-date))
+    ("daily-week" (zksummary-daily-show-now-week))
+    ("daily-month" (zksummary-daily-show-now-monthly))
+    ("weekly-week" (zksummary-weekly-show-now-week))))
+
+(defun zksummary-view-show-prev ()
+  (interactive)
+  (pcase zksummary-view-type
+    ("daily-date" (zksummary-daily-show-prev-date))
+    ("daily-week" (zksummary-daily-show-prev-week))
+    ("daily-month" (zksummary-daily-show-prev-month))
+    ("weekly-week" (zksummary-weekly-show-prev-week))))
+
+(defun zksummary-view-show-next ()
+  (interactive)
+  (pcase zksummary-view-type
+    ("daily-date" (zksummary-daily-show-next-date))
+    ("daily-week" (zksummary-daily-show-next-week))
+    ("daily-month" (zksummary-daily-show-next-month))
+    ("weekly-week" (zksummary-weekly-show-next-week))))
+
+(defun ewoc-last-node-pos (ewoc)
+  (ewoc--set-buffer-bind-dll ewoc
+    (ewoc--node-start-marker
+     ;; here last node is not the footer node
+     (ewoc--node-nth dll -2))))
+
+(defun ewoc-first-node-pos (ewoc)
+  (ewoc--set-buffer-bind-dll ewoc
+    (ewoc--node-start-marker
+     ;; here first node is not the header node
+     (ewoc--node-nth dll 1))))
+
+(defun ewoc-node-pos (ewoc)
+  (ewoc-location (ewoc-locate ewoc)))
+
+(defun zksummary-goto-next ()
+  (interactive)
+  (unless (= (ewoc-last-node-pos zksummary-ewoc)
+             (ewoc-node-pos zksummary-ewoc))
+    (ignore (ewoc-goto-next zksummary-ewoc 1))
+    (recenter-top-bottom 0)))
+
+(defun zksummary-goto-prev ()
+  (interactive)
+  (ignore (ewoc-goto-prev zksummary-ewoc 1))
+  (if (= (ewoc-first-node-pos zksummary-ewoc)
+         (ewoc-node-pos zksummary-ewoc))
+      (recenter-top-bottom -1)
+    (recenter-top-bottom 0)))
 
 (defvar zksummary-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "D" #'zksummary-daily-show)
-    (define-key map "W" #'zksummary-weekly-show)
+    (define-key map "dd" #'zksummary-daily-show-now-date)
+    (define-key map "dw" #'zksummary-daily-show-now-week)
+    (define-key map "dm" #'zksummary-daily-show-now-month)
+
+    (define-key map "ww" #'zksummary-weekly-show-now-week)
+
+    (define-key map "D" #'zksummary-daily-show-curr-date)
+    (define-key map "W" #'zksummary-weekly-show-curr-week)
     (define-key map "M" #'zksummary-monthly-show)
     (define-key map "Y" #'zksummary-yearly-show)
     
-    (define-key map "d" #'zksummary-view-show-curr)
+    (define-key map "." #'zksummary-view-show-now)
     (define-key map "b" #'zksummary-view-show-prev)
     (define-key map "f" #'zksummary-view-show-next)
     
@@ -326,28 +436,10 @@ If TIMELST is a vector, it represents a range of time."
     (define-key map "td" #'zksummary-delete)
     (define-key map "g" #'zksummary-refresh)
     (define-key map "q" #'zksummary-quit)
-    (define-key map "e" #'zksummary-edit)    
+    (define-key map "e" #'zksummary-edit)
+
+    (define-key map "p" #'zksummary-goto-prev)
+    (define-key map "n" #'zksummary-goto-next)
     map))
-
-(defun zksummary-view-show-curr ()
-  (interactive)
-  (pcase zksummary-view-type
-    ("daily-date" (zksummary-daily-show-curr-day))
-    ("daily-week" (zksummary-daily-show-curr-week))
-    ("daily-month" (zksummary-daily-show-curr-monthly))))
-
-(defun zksummary-view-show-prev ()
-  (interactive)
-  (pcase zksummary-view-type
-    ("daily-date" (zksummary-daily-show-prev-day))
-    ("daily-week" (zksummary-daily-show-prev-week))
-    ("daily-month" (zksummary-daily-show-prev-month))))
-
-(defun zksummary-view-show-next ()
-  (interactive)
-  (pcase zksummary-view-type
-    ("daily-date" (zksummary-daily-show-next-day))
-    ("daily-week" (zksummary-daily-show-next-week))
-    ("daily-month" (zksummary-daily-show-next-month))))
 
 (provide 'zksummary)

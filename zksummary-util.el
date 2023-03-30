@@ -1,11 +1,33 @@
+(defun zksummary-day-of-week (&optional date)
+  (format-time-string "%a" (zksummary-date-to-seconds
+                            (zksummary-date-str date))))
+
 (defun zksummary-is-date (time)
   (string-match "^[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}$" time))
+
+(defun zksummary-is-week (time)
+  (string-match "^[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\} [0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}$" time))
 
 (defun zksummary-is-month (time)
   (string-match "^[0-9]\\{4\\}-[0-9]\\{2\\}$" time))
 
 (defun zksummary-is-year (time)
   (string-match "^[0-9]\\{4\\}$" time))
+
+(defun zksummary-date-str (&optional date)
+  (or date (zksummary-seconds-to-date)))
+
+(defun zksummary-week-str (&optional date)
+  (let* ((day-lst (zksummary-week-date-lst date))
+         (Mon-date (car day-lst))
+         (Sun-date (car (last day-lst))))
+    (concat Mon-date " " Sun-date)))
+
+(defun zksummary-month-str (&optional date)
+  (substring (zksummary-date-str date) 0 7))
+
+(defun zksummary-year-str (&optional date)
+  (substring (zksummary-date-str date) 0 4))
 
 (defun zksummary-date-to-seconds (&optional date)
   "Convert date to seconds."
@@ -16,10 +38,14 @@
   "Convert seconds to a date."
   (format-time-string "%Y-%m-%d" seconds))
 
-(defun zksummary-inc-date (date n)
-  (let* ((second (zksummary-date-to-seconds date))
-         (new-second (+ second (* n (* 24 60 60)))))
-    (zksummary-seconds-to-date new-second)))
+(defun zksummary-inc-week (week n)
+  "Week is a string of two dates which are Monday and Sunday."
+  (let* ((lst (split-string week " " t))
+         (from-date (car lst))
+         (to-date (cadr lst))
+         (new-from-date (zksummary-inc-date from-date (* n 7)))
+         (new-to-date (zksummary-inc-date to-date (* n 7))))
+    (concat new-from-date " " new-to-date)))
 
 (defun zksummary-fmt-month-str (n)
   (if (< n 10)
@@ -71,6 +97,40 @@
                 (setq date (zksummary-inc-date date n))))))
     date))
 
+(defun zksummary-daily-week-check (week-date-lst n)
+  ;; check if the first day of week is later than the db max time.
+  ;; check if the last day of week is ealier that the db min time.
+  (let ((max (zksummary-db-max-time "daily"))
+        (min (zksummary-db-min-time "daily"))
+        (first (car week-date-lst))
+        (last (car (last week-date-lst))))
+    (pcase nil
+      ((and (guard (not (string< last max)))
+            (guard (> n 0)))
+       "The latest daily-week summary!")
+      ((and (guard (not (string> first min)))
+            (guard (< n 0)))
+       "The earlist daily-week summary!")
+      (_ nil))))
+
+(defun zksummary-inc-week-date-lst (week-date-lst n)
+  (zksummary-week-date-lst
+   (zksummary-inc-date
+    (nth 0 week-date-lst) (* n 7))))
+
+;; FIX: modify `zksummary-inc-db-date' to make it more common!
+(defun zksummary-inc-db-week-date-lst (week-date-lst n)
+  (let* ((lst week-date-lst)
+         (res (zksummary-daily-week-check lst n)))
+    (pcase res
+      ((pred stringp)
+       (message "%s" res))
+      ((pred null)
+       (setq lst (zksummary-inc-week-date-lst lst n))
+       (while (null (zksummary-db-type-time-entries "daily" (vconcat lst)))
+         (setq lst (zksummary-inc-week-date-lst lst n)))))
+    lst))
+
 (defun zksummary-calendar-date (&optional seconds)
   (list (string-to-number (format-time-string "%m" seconds))
         (string-to-number (format-time-string "%d" seconds))
@@ -97,7 +157,8 @@
 
 (defun zksummary-month-date-lst (&optional month)
   "A list of all date in a month. DATE is a day of the month."
-  (let* ((month-str (or month (substring (zksummary-seconds-to-date) 0 7)))
+  (let* ((month-str (or month
+                        (zksummary-month-str)))
          (year (string-to-number (substring month-str 0 4)))
          (month (string-to-number (substring month-str 5 7)))
          (days (date-days-in-month year month)))
@@ -118,7 +179,7 @@
     (pcase from
       ((pred zksummary-is-date) (zksummary-date-seq from to))
       ((pred zksummary-is-month) (zksummary-month-seq from to))
-      ((pred zksummary-is-date) (zksummary-year-seq from to))
+      ((pred zksummary-is-year) (zksummary-year-seq from to))
       (_ (error "Wrong format of zksummary time: %s" from)))))
 
 (defun zksummary-date-seq (from to)
