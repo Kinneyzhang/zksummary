@@ -1,3 +1,84 @@
+;; FIXME: use some api
+(defun most-frequent-string (string-list)
+  "Return the most frequent string in STRING-LIST."
+  (let ((string-counts (make-hash-table :test 'equal)))
+    ;; Count the occurrences of each string
+    (dolist (string string-list)
+      (let ((count (gethash string string-counts 0)))
+        (puthash string (1+ count) string-counts)))
+    ;; Find the string with the highest count
+    (let ((max-count 0)
+          (max-string nil))
+      (maphash (lambda (string count)
+                 (when (> count max-count)
+                   (setq max-count count
+                         max-string string)))
+               string-counts)
+      max-string)))
+
+(defun zksummary-week-month (week-str)
+  (let* ((from-date
+          (nth 0 (split-string week-str " " t " +")))
+         (date-lst (zksummary-week-date-lst from-date)))
+    (most-frequent-string
+     (mapcar #'zksummary-month-str date-lst))))
+
+(defun zksummary-week-year (week-str)
+  (let* ((from-date
+          (nth 0 (split-string week-str " " t " +")))
+         (date-lst (zksummary-week-date-lst from-date)))
+    (most-frequent-string
+     (mapcar #'zksummary-year-str date-lst))))
+
+(defun zksummary-month-str-dwim (&optional time)
+  ;; date -> curr month
+  ;; week -> has more days in a month
+  ;; month -> curr month
+  ;; year -> now month
+  (pcase time
+    ((pred null) (zksummary-month-str))
+    ((pred zksummary-is-date)
+     (zksummary-month-str time))
+    ((pred zksummary-is-week)
+     (zksummary-week-month time))
+    ((pred zksummary-is-month) time)
+    ((pred zksummary-is-year)
+     (concat time "-" "12"))))
+
+(defun zksummary-week-str-dwim (&optional time)
+  ;; date -> curr week
+  ;; week -> curr week
+  ;; month -> latest week in month
+  ;; year -> now week
+  )
+
+(defun zksummary-year-str-dwim (&optional time)
+  ;; date -> curr year
+  ;; week -> has more days in a year
+  ;; month -> curr year
+  ;; year -> curr year
+  (pcase time
+    ((pred null) (zksummary-year-str))
+    ((pred zksummary-is-date)
+     (zksummary-year-str time))
+    ((pred zksummary-is-week)
+     (zksummary-week-year time))
+    ((pred zksummary-is-month) (substring time 0 4))
+    ((pred zksummary-is-year) time)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun select-window-by-buffer (buffer-name)
+  (let ((buf-win-alist
+         (mapcar (lambda (win)
+                   (cons (buffer-name (window-buffer win)) win))
+                 (window-list))))
+    (if-let ((pair (assoc buffer-name buf-win-alist)))
+        (select-window (cdr pair)))))
+
+(defun zksummary-buffer-p ()
+  (string= (buffer-name) zksummary-buffer))
+
 (defun zksummary-day-of-week (&optional date)
   (format-time-string "%a" (zksummary-date-to-seconds
                             (zksummary-date-str date))))
@@ -47,6 +128,23 @@
          (new-to-date (zksummary-inc-date to-date (* n 7))))
     (concat new-from-date " " new-to-date)))
 
+(defun zksummary-inc-db-week (week n)
+  (let* ((max-week (zksummary-db-max-time "weekly"))
+         (min-week (zksummary-db-min-time "weekly"))
+         (new-week (zksummary-inc-week week n)))
+    (pcase nil
+      ((and (guard (string> new-week max-week))
+            (guard (> n 0)))
+       (message "The lastest week summary!")
+       (setq new-week week))
+      ((and (guard (string< new-week min-week))
+            (guard (< n 0)))
+       (message "The earlist week summary!")
+       (setq new-week week))
+      (_ (while (= (zksummary-db-count-by-time new-week) 0)
+           (setq new-week (zksummary-inc-week new-week n)))))
+    new-week))
+
 (defun zksummary-fmt-month-str (n)
   (if (< n 10)
       (format "0%s" n)
@@ -64,17 +162,76 @@
          (let* ((y-inc (/ s 12))
                 (new-m (% s 12))
                 (new-y (+ (string-to-number y) y-inc)))
-           (concat (number-to-string new-y) "-" (zksummary-fmt-month-str new-m)))))
+           (concat (number-to-string new-y)
+                   "-" (zksummary-fmt-month-str new-m)))))
       ((pred (> 0))
        (if (> s 0)
            (concat y "-" (zksummary-fmt-month-str s))
          (let* ((y-inc (1- (/ s 12)))
                 (new-y (+ (string-to-number y) y-inc))
                 (new-m (+ 12 (% s 12))))
-           (concat (number-to-string new-y) "-" (zksummary-fmt-month-str new-m))))))))
+           (concat (number-to-string new-y)
+                   "-" (zksummary-fmt-month-str new-m))))))))
+
+(defun zksummary-inc-db-month (month n)
+  (let ((max-month (zksummary-db-max-time "monthly"))
+        (min-month (zksummary-db-min-time "monthly"))
+        (new-month (zksummary-inc-month month n)))
+    (pcase nil
+      ((and (guard (string> new-month max-month))
+            (guard (> n 0)))
+       (message "The lastest month summary!")
+       (setq new-month month))
+      ((and (guard (string< new-month min-month))
+            (guard (< n 0)))
+       (message "The earlist month summary!")
+       (setq new-month month))
+      (_ (while (= (zksummary-db-count-by-time new-month) 0)
+           (setq new-month (zksummary-inc-month new-month n)))))
+    new-month))
+
+(defun zksummary-daily-inc-db-month (month n)
+  (let ((max-month (zksummary-month-str
+                    (zksummary-db-max-time "daily")))
+        (min-month (zksummary-month-str
+                    (zksummary-db-min-time "daily")))
+        (new-month (zksummary-inc-month month n)))
+    (pcase new-month
+      ((and (pred (string< max-month))
+            (guard (> n 0)))
+       (message "The latest daily-month summary!")
+       (setq new-month month))
+      ((and (pred (string> min-month))
+            (guard (< n 0)))
+       (message "The earlist daily-month summary!")
+       (setq new-month month))
+      ;; all date in a month has no summary, skip
+      (_ (while (= 0 (seq-reduce
+                      '+ (mapcar #'zksummary-db-count-by-time
+                                 (zksummary-month-date-lst "2023-04"))
+                      0))
+           (setq new-month (zksummary-inc-month month n)))))
+    new-month))
 
 (defun zksummary-inc-year (year n)
   (number-to-string (+ (string-to-number year) n)))
+
+(defun zksummary-inc-db-year (year n)
+  (let ((max-year (zksummary-db-max-time "yearly"))
+        (min-year (zksummary-db-min-time "yearly"))
+        (new-year (zksummary-inc-year year n)))
+    (pcase new-year
+      ((and (pred (string< max-year))
+            (guard (> n 0)))
+       (message "The latest yearly summary!")
+       (setq new-year year))
+      ((and (pred (string> min-year))
+            (guard (< n 0)))
+       (message "The earlist yearly summary!")
+       (setq new-year year))
+      (_ (while (= (zksummary-db-count-by-time new-year) 0)
+           (setq new-year (zksummary-inc-year new-year n)))))
+    new-year))
 
 (defun zksummary-inc-date (date n)
   (let* ((second (zksummary-date-to-seconds date))
@@ -84,18 +241,20 @@
 (defun zksummary-inc-db-date (date n)
   "Increate N days of DATE on which must have a record in db."
   (let ((max-date (zksummary-db-max-time "daily"))
-        (min-date (zksummary-db-min-time "daily")))
-    (pcase date
-      ((and (pred (string= max-date))
+        (min-date (zksummary-db-min-time "daily"))
+        (new-date (zksummary-inc-date date n)))
+    (pcase new-date
+      ((and (pred (string< max-date))
             (guard (> n 0)))
-       (message "The latest daily summary!"))
-      ((and (pred (string= min-date))
+       (message "The latest daily summary!")
+       (setq new-date date))
+      ((and (pred (string> min-date))
             (guard (< n 0)))
-       (message "The earlist daily summary!"))
-      (_ (and (setq date (zksummary-inc-date date n))
-              (while (= (zksummary-db-count-by-time date) 0)
-                (setq date (zksummary-inc-date date n))))))
-    date))
+       (message "The earlist daily summary!")
+       (setq new-date date))
+      (_ (while (= (zksummary-db-count-by-time new-date) 0)
+           (setq new-date (zksummary-inc-date new-date n)))))
+    new-date))
 
 (defun zksummary-daily-week-check (week-date-lst n)
   ;; check if the first day of week is later than the db max time.
@@ -119,6 +278,7 @@
     (nth 0 week-date-lst) (* n 7))))
 
 ;; FIX: modify `zksummary-inc-db-date' to make it more common!
+;; all date of week has no summary, skip!
 (defun zksummary-inc-db-week-date-lst (week-date-lst n)
   (let* ((lst week-date-lst)
          (res (zksummary-daily-week-check lst n)))
@@ -127,7 +287,8 @@
        (message "%s" res))
       ((pred null)
        (setq lst (zksummary-inc-week-date-lst lst n))
-       (while (null (zksummary-db-type-time-entries "daily" (vconcat lst)))
+       (while (null (zksummary-db-type-time-entries "daily"
+                                                    (vconcat lst)))
          (setq lst (zksummary-inc-week-date-lst lst n)))))
     lst))
 

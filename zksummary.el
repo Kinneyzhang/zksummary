@@ -1,11 +1,14 @@
 (require 'zksummary-util)
 (require 'zksummary-db)
 (require 'zksummary-face)
+(require 'valign)
 
 (defvar zksummary-buffer "*zksummary*")
 (defvar zksummary-default-type "daily")
 (defvar zksummary-type-list '("daily" "weekly" "monthly" "yearly" "dwim"))
 (defvar zksummary-capture-buffer "*Zksummary Capture*")
+
+(defvar zksummary-window-width 55)
 
 (defvar zksummary-capture-mode-map
   (let ((map (make-sparse-keymap)))
@@ -37,9 +40,17 @@
     ("monthly" (zksummary-month-str))
     ("yearly" (zksummary-year-str))))
 
+(defun zksummary-capture--at-content-start ()
+  (let ((content-start (save-excursion
+                         (goto-char (point-min))
+                         (+ 2 (line-end-position)))))
+    (= (point) content-start)))
+
 (defun zksummary-capture (&optional type time content id)
   (setq zksummary-window-configuration (current-window-configuration))
   (switch-to-buffer zksummary-capture-buffer)
+  (orgtbl-mode 1)
+  ;; (org-mode)
   (setq zksummary-capture-type (or type zksummary-default-type))
   (setq zksummary-capture-time (or time (zksummary-default-time-by-type
                                          zksummary-capture-type)))
@@ -52,7 +63,11 @@
     ;; make the meta info read only.
     (save-excursion
       (goto-char (point-min))
-      (add-text-properties (line-beginning-position) (+ 2 (line-end-position)) '(read-only t))))
+      (add-text-properties (line-beginning-position)
+                           (+ 1 (line-end-position))
+                           '(read-only t))))
+  (valign-mode 1)
+  (zksummary-valign-table)
   (zksummary-capture-mode 1))
 
 (defun zksummary-capture-finalize ()
@@ -80,7 +95,8 @@
         ;; add a new summary
         (let ((id (org-id-uuid)))
           (zksummary-ewoc-add id time type content)
-          (zksummary-db-add type content time id))))))
+          (zksummary-db-add type content time id)))
+      (zksummary-valign-table))))
 
 (defun zksummary-capture-kill ()
   (interactive)
@@ -178,8 +194,25 @@ If TIMELST is a vector, it represents a range of time."
               (ewoc-enter-last ewoc nil)
             (dolist (summary summaries)
               (ewoc-enter-last ewoc summary)))))
-      (read-only-mode 1)
-      (switch-to-buffer buf))))
+      (zksummary-valign-table)
+      (read-only-mode 1))
+    (switch-to-buffer buf)
+    ;; (if-let ((_ (select-window-by-buffer zksummary-buffer)))
+    ;;     (ignore)
+    ;;   (when zksummary-window-width
+    ;;     (split-window-horizontally zksummary-window-width))
+    ;;   (switch-to-buffer buf))
+    ))
+
+(defun zksummary-valign-table ()
+  (save-excursion
+    (while (< (point) (point-max))
+      (if (valign--at-table-p)
+          (progn
+            (valign-table)
+            (valign--end-of-table)
+            (forward-line 1))
+        (forward-line 1)))))
 
 ;;;; daily view
 
@@ -264,7 +297,7 @@ If TIMELST is a vector, it represents a range of time."
   (zksummary-show
    "daily-month"
    (zksummary-month-date-lst
-    (zksummary-inc-month
+    (zksummary-daily-inc-db-month
      (zksummary-month-str (nth 0 zksummary-curr-timeseq)) -1))))
 
 ;;;###autoload
@@ -273,7 +306,7 @@ If TIMELST is a vector, it represents a range of time."
   (zksummary-show
    "daily-month"
    (zksummary-month-date-lst
-    (zksummary-inc-month
+    (zksummary-daily-inc-db-month
      (zksummary-month-str (nth 0 zksummary-curr-timeseq)) 1))))
 
 ;;;; weekly view
@@ -284,7 +317,8 @@ If TIMELST is a vector, it represents a range of time."
 
 (defun zksummary-weekly-show-now-week ()
   (interactive)
-  (zksummary-show "weekly-week" (list (zksummary-week-str))))
+  (zksummary-show "weekly-week"
+                  (list (zksummary-week-str))))
 
 (defun zksummary-weekly-show-curr-week ()
   ;; 支持 当前日期所在的 weekly summary
@@ -296,13 +330,13 @@ If TIMELST is a vector, it represents a range of time."
 (defun zksummary-weekly-show-prev-week ()
   (interactive)
   (zksummary-show "weekly-week"
-                  (list (zksummary-inc-week
+                  (list (zksummary-inc-db-week
                          (nth 0 zksummary-curr-timeseq) -1))))
 
 (defun zksummary-weekly-show-next-week ()
   (interactive)
   (zksummary-show "weekly-week"
-                  (list (zksummary-inc-week
+                  (list (zksummary-inc-db-week
                          (nth 0 zksummary-curr-timeseq) 1))))
 
 ;;; monthly view
@@ -312,15 +346,70 @@ If TIMELST is a vector, it represents a range of time."
   (zksummary-show "monthly-all"))
 
 ;;;###autoload
+(defun zksummary-monthly-show-now-month ()
+  (interactive)
+  (zksummary-show "monthly-month"
+                  (list (zksummary-month-str-dwim))))
+
+;;;###autoload
 (defun zksummary-monthly-show-curr-month ()
   (interactive)
-  (zksummary-show "monthly-month" ))
+  (zksummary-show "monthly-month"
+                  (list (zksummary-month-str-dwim
+                         (nth 0 zksummary-curr-timeseq)))))
 
+;;;###autoload
+(defun zksummary-monthly-show-prev-month ()
+  (interactive)
+  (zksummary-show
+   "monthly-month"
+   (list (zksummary-inc-db-month
+          (nth 0 zksummary-curr-timeseq) -1))))
+
+;;;###autoload
+(defun zksummary-monthly-show-next-month ()
+  (interactive)
+  (zksummary-show
+   "monthly-month"
+   (list (zksummary-inc-db-month
+          (nth 0 zksummary-curr-timeseq) 1))))
+
+;;; yearly show
 ;;;###autoload
 (defun zksummary-yearly-show ()
   (interactive)
   (zksummary-show "yearly-all"))
 
+;;;###autoload
+(defun zksummary-yearly-show-now-year ()
+  (interactive)
+  (zksummary-show "yearly-year"
+                  (list (zksummary-year-str))))
+
+;;;###autoload
+(defun zksummary-yearly-show-curr-year ()
+  (interactive)
+  (zksummary-show "yearly-year"
+                  (list (zksummary-year-str-dwim
+                         (nth 0 zksummary-curr-timeseq)))))
+
+;;;###autoload
+(defun zksummary-yearly-show-prev-year ()
+  (interactive)
+  (zksummary-show
+   "yearly-year"
+   (list (zksummary-inc-db-year
+          (nth 0 zksummary-curr-timeseq) -1))))
+
+;;;###autoload
+(defun zksummary-yearly-show-next-year ()
+  (interactive)
+  (zksummary-show
+   "yearly-year"
+   (list (zksummary-inc-db-year
+          (nth 0 zksummary-curr-timeseq) 1))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defun zksummary-add ()
   (interactive)
@@ -367,7 +456,9 @@ If TIMELST is a vector, it represents a range of time."
     ("daily-date" (zksummary-daily-show-now-date))
     ("daily-week" (zksummary-daily-show-now-week))
     ("daily-month" (zksummary-daily-show-now-monthly))
-    ("weekly-week" (zksummary-weekly-show-now-week))))
+    ("weekly-week" (zksummary-weekly-show-now-week))
+    ("monthly-month" (zksummary-monthly-show-now-month))
+    ("yearly-year" (zksummary-yearly-show-now-year))))
 
 (defun zksummary-view-show-prev ()
   (interactive)
@@ -375,7 +466,9 @@ If TIMELST is a vector, it represents a range of time."
     ("daily-date" (zksummary-daily-show-prev-date))
     ("daily-week" (zksummary-daily-show-prev-week))
     ("daily-month" (zksummary-daily-show-prev-month))
-    ("weekly-week" (zksummary-weekly-show-prev-week))))
+    ("weekly-week" (zksummary-weekly-show-prev-week))
+    ("monthly-month" (zksummary-monthly-show-prev-month))
+    ("yearly-year" (zksummary-yearly-show-prev-year))))
 
 (defun zksummary-view-show-next ()
   (interactive)
@@ -383,19 +476,21 @@ If TIMELST is a vector, it represents a range of time."
     ("daily-date" (zksummary-daily-show-next-date))
     ("daily-week" (zksummary-daily-show-next-week))
     ("daily-month" (zksummary-daily-show-next-month))
-    ("weekly-week" (zksummary-weekly-show-next-week))))
+    ("weekly-week" (zksummary-weekly-show-next-week))
+    ("monthly-month" (zksummary-monthly-show-next-month))
+    ("yearly-year" (zksummary-yearly-show-next-year))))
 
 (defun ewoc-last-node-pos (ewoc)
   (ewoc--set-buffer-bind-dll ewoc
-    (ewoc--node-start-marker
-     ;; here last node is not the footer node
-     (ewoc--node-nth dll -2))))
+                             (ewoc--node-start-marker
+                              ;; here last node is not the footer node
+                              (ewoc--node-nth dll -2))))
 
 (defun ewoc-first-node-pos (ewoc)
   (ewoc--set-buffer-bind-dll ewoc
-    (ewoc--node-start-marker
-     ;; here first node is not the header node
-     (ewoc--node-nth dll 1))))
+                             (ewoc--node-start-marker
+                              ;; here first node is not the header node
+                              (ewoc--node-nth dll 1))))
 
 (defun ewoc-node-pos (ewoc)
   (ewoc-location (ewoc-locate ewoc)))
@@ -420,12 +515,13 @@ If TIMELST is a vector, it represents a range of time."
     (define-key map "dd" #'zksummary-daily-show-now-date)
     (define-key map "dw" #'zksummary-daily-show-now-week)
     (define-key map "dm" #'zksummary-daily-show-now-month)
-
     (define-key map "ww" #'zksummary-weekly-show-now-week)
-
+    (define-key map "mm" #'zksummary-monthly-show-now-month)
+    (define-key map "yy" #'zksummary-yearly-show-now-year)
+    
     (define-key map "D" #'zksummary-daily-show-curr-date)
     (define-key map "W" #'zksummary-weekly-show-curr-week)
-    (define-key map "M" #'zksummary-monthly-show)
+    (define-key map "M" #'zksummary-monthly-show-curr-month)
     (define-key map "Y" #'zksummary-yearly-show)
     
     (define-key map "." #'zksummary-view-show-now)
