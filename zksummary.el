@@ -49,8 +49,7 @@
 (defun zksummary-capture (&optional type time content id)
   (setq zksummary-window-configuration (current-window-configuration))
   (switch-to-buffer zksummary-capture-buffer)
-  (orgtbl-mode 1)
-  ;; (org-mode)
+  (orgtbl-mode 1) (valign-mode 1)
   (setq zksummary-capture-type (or type zksummary-default-type))
   (setq zksummary-capture-time (or time (zksummary-default-time-by-type
                                          zksummary-capture-type)))
@@ -66,7 +65,7 @@
       (add-text-properties (line-beginning-position)
                            (+ 1 (line-end-position))
                            '(read-only t))))
-  (valign-mode 1)
+  (goto-char (point-min))
   (zksummary-valign-table)
   (zksummary-capture-mode 1))
 
@@ -194,9 +193,11 @@ If TIMELST is a vector, it represents a range of time."
               (ewoc-enter-last ewoc nil)
             (dolist (summary summaries)
               (ewoc-enter-last ewoc summary)))))
-      (zksummary-valign-table)
       (read-only-mode 1))
     (switch-to-buffer buf)
+    ;; (orgtbl-mode 1)
+    (valign-mode 1)
+    (zksummary-valign-table)
     ;; (if-let ((_ (select-window-by-buffer zksummary-buffer)))
     ;;     (ignore)
     ;;   (when zksummary-window-width
@@ -206,10 +207,12 @@ If TIMELST is a vector, it represents a range of time."
 
 (defun zksummary-valign-table ()
   (save-excursion
+    (goto-char (point-min))
     (while (< (point) (point-max))
       (if (valign--at-table-p)
           (progn
             (valign-table)
+            (orgtbl-hijacker-command-102 2)
             (valign--end-of-table)
             (forward-line 1))
         (forward-line 1)))))
